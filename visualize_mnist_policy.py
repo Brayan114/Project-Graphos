@@ -80,9 +80,9 @@ def run_and_save_reconstruction(weights_path="graphos_mnist_policy.pth", save_pa
         # Greedy action: expected value of Beta distribution (mean)
         action = alpha / (alpha + beta) # [1, 14]
         
-        # Extract stroke geometry & mode
+        # Extract stroke geometry & mode (enforce minimum width bias to match training setup)
         cp = action[:, 0:6].view(1, 3, 2) * scale_cp
-        w = action[:, 6:9] * (H * 0.12)
+        w = 2.0 + action[:, 6:9] * (H * 0.12 - 2.0)
         c = action[:, 9:12]
         opacities = action[:, 12:13]
         modes = (action[:, 13:14] > 0.5).float() * 2.0 - 1.0 # Draw (+1) or Erase (-1)

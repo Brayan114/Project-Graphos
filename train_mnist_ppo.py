@@ -167,8 +167,9 @@ class MNISTPPOTrainingLoop:
                 modes = (action[:, 13:14] > 0.5).float() * 2.0 - 1.0 # [B, 1]
                 
                 # Render strokes
+                # Scale coordinates and apply a minimum stroke width of 2.0 pixels to prevent dissipation
                 cp = action[:, 0:6].view(B, 3, 2) * scale_cp
-                w = action[:, 6:9] * (self.H * 0.12) # Capped at 12% width
+                w = 2.0 + action[:, 6:9] * (self.H * 0.12 - 2.0)
                 c = action[:, 9:12]
                 opacities = action[:, 12:13]
                 
@@ -177,8 +178,8 @@ class MNISTPPOTrainingLoop:
                 # Compute step reward (L1 delta)
                 new_l1 = F.l1_loss(new_canvas[:, :3, :, :], batch_targets, reduction='none').mean(dim=[1,2,3])
                 
-                # Paint waste regularization (decays over step t)
-                reg_weight = 0.05 * (1.0 - (t / self.K))
+                # Paint waste regularization (decays over step t, scaled down to prevent early collapse)
+                reg_weight = 0.01 * (1.0 - (t / self.K))
                 reg = action[:, 6:9].mean(dim=-1) * action[:, 12]
                 
                 reward = (current_l1 - new_l1) - reg_weight * reg
