@@ -43,7 +43,7 @@ class PPOTrainingLoop:
                 print(f"Skipping torch.compile: {e}")
                 
         self.optimizer = optim.Adam(self.policy.parameters(), lr=lr)
-        self.scaler = torch.cuda.amp.GradScaler() # GradScaler for stable FP16 AMP training
+        self.scaler = torch.amp.GradScaler('cuda') # GradScaler for stable FP16 AMP training
 
     def collect_rollouts(self, batch_targets):
         """
@@ -79,26 +79,26 @@ class PPOTrainingLoop:
                 canvas_rgb = canvas[:, :3, :, :]
                 canvas_alpha = canvas[:, 3:4, :, :]
                 
-                # Store detached observations
-                obs_canvas_rgb.append(canvas_rgb.detach())
-                obs_canvas_alpha.append(canvas_alpha.detach())
-                obs_step_t.append(step_t.detach())
+                # Store detached, cloned observations for history safety
+                obs_canvas_rgb.append(canvas_rgb.clone().detach())
+                obs_canvas_alpha.append(canvas_alpha.clone().detach())
+                obs_step_t.append(step_t.clone().detach())
                 
                 # Forward pass under FP16 autocast
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast('cuda'):
                     alpha, beta, value = self.policy(batch_targets, canvas_rgb, canvas_alpha, step_t)
                 
-                # CRITICAL: Detach value function predictions from graph
-                values_history.append(value.squeeze(-1).detach()) # [B]
+                # CRITICAL: Detach and clone value function predictions from graph to prevent CUDA Graph overwrite
+                values_history.append(value.squeeze(-1).clone().detach()) # [B]
                 
                 # Sample actions
                 dist = Beta(alpha, beta)
                 action = dist.sample() # [B, 13]
                 log_prob = dist.log_prob(action).sum(dim=-1) # [B]
                 
-                # CRITICAL: Detach actions and log probabilities
-                actions_history.append(action.detach())
-                log_probs_history.append(log_prob.detach())
+                # CRITICAL: Detach and clone actions and log probabilities
+                actions_history.append(action.clone().detach())
+                log_probs_history.append(log_prob.clone().detach())
                 
                 # Render strokes
                 modes = torch.ones((B, 1), device=self.device)
@@ -119,19 +119,19 @@ class PPOTrainingLoop:
                 reg_weight = 0.05 * (1.0 - (t / self.K))
                 reg = action[:, 6:9].mean(dim=-1) * action[:, 12]
                 
-                # CRITICAL: Detach reward
+                # CRITICAL: Detach and clone reward
                 reward = (current_l1 - new_l1) - reg_weight * reg
-                rewards_history.append(reward.detach())
+                rewards_history.append(reward.clone().detach())
                 
                 # Update canvas and L1 trackers
-                canvas = new_canvas.detach()
-                current_l1 = new_l1.detach()
+                canvas = new_canvas.clone().detach()
+                current_l1 = new_l1.clone().detach()
                 
             # Value of the final state
             final_step = torch.full((B, 1), 1.0, device=self.device)
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast('cuda'):
                 _, _, final_value = self.policy(batch_targets, canvas[:, :3, :, :], canvas[:, 3:4, :, :], final_step)
-            final_value = final_value.squeeze(-1).detach()
+            final_value = final_value.squeeze(-1).clone().detach()
             
         # Stack rollout variables
         obs_canvas_rgb = torch.stack(obs_canvas_rgb)     # [K, B, 3, H, W]
@@ -156,7 +156,7 @@ class PPOTrainingLoop:
             returns[t] = advantages[t] + values[t]
             next_value = values[t]
             
-        rollouts = (obs_canvas_rgb, obs_canvas_alpha, obs_step_t, actions, log_probs, returns, advantages)
+        rollouts = (obs_canvas_rgb, obs_canvas_alpha, obs_step_t, actions, log_probs, returns.clone().detach(), advantages.clone().detach())
         return rollouts
 
     def update_policy(self, batch_targets, rollouts, ppo_epochs=4, mini_batch_size=16):
@@ -200,7 +200,7 @@ class PPOTrainingLoop:
                 adv = flat_advantages[batch_indices]
                 
                 # Autocast policy forward pass in FP16
-                with torch.cuda.amp.autocast():
+                with torch.amp.autocast('cuda'):
                     alpha, beta, value = self.policy(t_targets, c_rgb, c_alpha, s_t)
                     value = value.squeeze(-1) # [B]
                     
@@ -254,7 +254,7 @@ def run_rl_sprint(epochs=5, batch_size=8, K=5):
         for target_img, _, _, _ in loader:
             target_img = target_img.to(device)
             
-            # Rollout collection (Safe from VRAM leaks)
+            # Rollout collection (Safe from VRAM leaks and CUDA Graph overwrites)
             rollouts = trainer.collect_rollouts(target_img)
             rewards = rollouts[3] # [K, B]
             
