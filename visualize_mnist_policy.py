@@ -48,7 +48,10 @@ def run_and_save_reconstruction(weights_path="graphos_mnist_policy.pth", save_pa
     policy = DifferentiableGraphosPolicy(img_size=H, num_layers=4, num_heads=4, embed_dim=128, action_dim=14).to(device)
     
     if os.path.exists(weights_path):
-        policy.load_state_dict(torch.load(weights_path, map_location=device))
+        state_dict = torch.load(weights_path, map_location=device)
+        # Strip '_orig_mod.' prefix added by torch.compile wrappers during saving
+        clean_state_dict = {k.replace("_orig_mod.", ""): v for k, v in state_dict.items()}
+        policy.load_state_dict(clean_state_dict)
         print(f"Successfully loaded policy weights from '{weights_path}'")
     else:
         print(f"Warning: '{weights_path}' not found! Running visualization with random weights.")

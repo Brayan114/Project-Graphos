@@ -320,8 +320,9 @@ def run_mnist_rl_sprint(epochs=5, batch_size=32, K=4):
         elapsed = time.time() - start_time
         print(f"Epoch {epoch+1:02d}/{epochs:02d} | Avg Trajectory Reward: {epoch_reward/batches_count:.5f} | Time: {elapsed:.2f}s")
         
-        # Save checkpoint weights
-        torch.save(trainer.policy.state_dict(), "graphos_mnist_policy.pth")
+        # Save checkpoint weights (unwrapping torch.compile wrapper if it exists)
+        raw_policy = trainer.policy._orig_mod if hasattr(trainer.policy, "_orig_mod") else trainer.policy
+        torch.save(raw_policy.state_dict(), "graphos_mnist_policy.pth")
         
     print("\n🎉 MNIST PPO training complete! Policy saved to 'graphos_mnist_policy.pth'.")
 
