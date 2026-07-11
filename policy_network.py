@@ -111,7 +111,7 @@ class TransformerBlockWithAdaLN(nn.Module):
         return x
 
 class DifferentiableGraphosPolicy(nn.Module):
-    def __init__(self, img_size=224, patch_size=16, embed_dim=256, num_heads=8, num_layers=6, time_dim=256):
+    def __init__(self, img_size=224, patch_size=16, embed_dim=256, num_heads=8, num_layers=6, time_dim=256, action_dim=13):
         """
         Project Graphos Policy Network.
         Accepts: Target image, current canvas, target-canvas difference, and canvas alpha.
@@ -120,6 +120,7 @@ class DifferentiableGraphosPolicy(nn.Module):
         """
         super().__init__()
         self.embed_dim = embed_dim
+        self.action_dim = action_dim
         
         # 1. Encoders & Embedding blocks
         self.patch_embed = PatchEmbedding(in_channels=4, patch_size=patch_size, embed_dim=embed_dim, img_size=img_size)
@@ -146,11 +147,11 @@ class DifferentiableGraphosPolicy(nn.Module):
         self.fusion_norm = nn.LayerNorm(embed_dim)
         
         # 4. Actor-Critic Heads
-        # Actor Head: Outputs 2 shape parameters (alpha, beta) per continuous parameter (13 parameters total)
+        # Actor Head: Outputs 2 shape parameters (alpha, beta) per continuous parameter (action_dim parameters total)
         self.actor_fc = nn.Sequential(
             nn.Linear(embed_dim, embed_dim),
             nn.ReLU(),
-            nn.Linear(embed_dim, 13 * 2) # [B, 26]
+            nn.Linear(embed_dim, action_dim * 2) # [B, action_dim * 2]
         )
         
         # Critic Head: Outputs scalar Value function V(s)
@@ -233,8 +234,8 @@ class DifferentiableGraphosPolicy(nn.Module):
         cls_rep = fused[:, 0] # [B, embed_dim]
         
         # 4. Project to Actor parameters
-        actor_out = self.actor_fc(cls_rep) # [B, 26]
-        alpha_raw, beta_raw = torch.chunk(actor_out, 2, dim=-1) # Each [B, 13]
+        actor_out = self.actor_fc(cls_rep) # [B, action_dim * 2]
+        alpha_raw, beta_raw = torch.chunk(actor_out, 2, dim=-1) # Each [B, action_dim]
         
         # Map shape parameters to Beta distribution space: Softplus(x) + 1.0
         # Prevents alpha/beta from drifting <= 1.0 which creates numeric instability
