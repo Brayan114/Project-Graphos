@@ -239,8 +239,9 @@ class DifferentiableGraphosPolicy(nn.Module):
         
         # Map shape parameters to Beta distribution space: Softplus(x) + 1.0
         # Prevents alpha/beta from drifting <= 1.0 which creates numeric instability
-        alpha = F.softplus(alpha_raw) + 1.0001
-        beta = F.softplus(beta_raw) + 1.0001
+        # Clamped to max 20.0 to prevent distribution saturation and preserve gradients.
+        alpha = torch.clamp(F.softplus(alpha_raw) + 1.0001, max=20.0)
+        beta = torch.clamp(F.softplus(beta_raw) + 1.0001, max=20.0)
         
         # Project to Critic estimate
         value = self.critic_fc(cls_rep) # [B, 1]
