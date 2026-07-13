@@ -95,9 +95,9 @@ class MNISTPPOTrainingLoop:
         self.value_coef = value_coef
         self.entropy_coef = entropy_coef
         
-        # Initialize Renderer & Policy (using action_dim=14 for Draw/Erase support)
+        # Initialize Renderer & Policy (using action_dim=10 for black ink, draw-only geometry parameters)
         self.renderer = DifferentiableBezierRenderer(canvas_height=H, canvas_width=W, tau=0.5).to(self.device)
-        self.policy = DifferentiableGraphosPolicy(img_size=H, num_layers=4, num_heads=4, embed_dim=128, action_dim=14).to(self.device)
+        self.policy = DifferentiableGraphosPolicy(img_size=H, num_layers=4, num_heads=4, embed_dim=128, action_dim=10).to(self.device)
         
         # Compile model to optimize self-attention and cross-attention blocks (unlocks FlashAttention SDPA)
         if torch.cuda.is_available():
@@ -154,9 +154,9 @@ class MNISTPPOTrainingLoop:
                 # Detach and clone values
                 values_history.append(value.squeeze(-1).clone().detach())
                 
-                # Sample actions from the 14D Beta distribution
+                # Sample actions from the 10D Beta distribution
                 dist = Beta(alpha, beta)
-                action = dist.sample() # [B, 14]
+                action = dist.sample() # [B, 10]
                 # Clamp actions strictly away from boundaries 0 and 1 to prevent log(0) and log(1) NaNs
                 action_clamped = torch.clamp(action, min=1e-5, max=1.0 - 1e-5)
                 log_prob = dist.log_prob(action_clamped).sum(dim=-1) # [B]
@@ -164,16 +164,15 @@ class MNISTPPOTrainingLoop:
                 actions_history.append(action_clamped.clone().detach())
                 log_probs_history.append(log_prob.clone().detach())
                 
-                # Draw / Erase decision (14th parameter mapped to mode: Draw if > 0.5 else Erase)
-                # Map [0, 1] parameter to [-1, 1] mode range
-                modes = (action_clamped[:, 13:14] > 0.5).float() * 2.0 - 1.0 # [B, 1]
+                # Hardcode parameters for MNIST: Black Ink, Draw-only mode
+                modes = torch.ones((B, 1), device=self.device)
+                c = torch.zeros((B, 3), device=self.device)
                 
-                # Render strokes
+                # Render strokes (10D action parameterization)
                 # Scale coordinates and apply a minimum stroke width of 2.0 pixels to prevent dissipation
                 cp = action_clamped[:, 0:6].view(B, 3, 2) * scale_cp
                 w = 2.0 + action_clamped[:, 6:9] * (self.H * 0.12 - 2.0)
-                c = action_clamped[:, 9:12]
-                opacities = action_clamped[:, 12:13]
+                opacities = action_clamped[:, 9:10]
                 
                 new_canvas = self.renderer(cp, w, c, opacities, modes, canvas)
                 
@@ -182,7 +181,7 @@ class MNISTPPOTrainingLoop:
                 
                 # Paint waste regularization (decays over step t, scaled down to prevent early collapse)
                 reg_weight = 0.01 * (1.0 - (t / self.K))
-                reg = action[:, 6:9].mean(dim=-1) * action[:, 12]
+                reg = action_clamped[:, 6:9].mean(dim=-1) * action_clamped[:, 9]
                 
                 reward = (current_l1 - new_l1) - reg_weight * reg
                 rewards_history.append(reward.clone().detach())
@@ -327,9 +326,9 @@ def run_mnist_rl_sprint(epochs=5, batch_size=32, K=4):
         
         # Save checkpoint weights (unwrapping torch.compile wrapper if it exists)
         raw_policy = trainer.policy._orig_mod if hasattr(trainer.policy, "_orig_mod") else trainer.policy
-        torch.save(raw_policy.state_dict(), "graphos_mnist_policy.pth")
+        torch.save(raw_policy.state_dict(), "graphos_mnist_policy_10d.pth")
         
-    print("\n🎉 MNIST PPO training complete! Policy saved to 'graphos_mnist_policy.pth'.")
+    print("\n🎉 MNIST PPO training complete! Policy saved to 'graphos_mnist_policy_10d.pth'.")
 
 if __name__ == "__main__":
     run_mnist_rl_sprint(epochs=5, batch_size=32, K=4)

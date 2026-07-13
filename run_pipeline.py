@@ -31,7 +31,7 @@ def execute_complete_pipeline(epochs=60, batch_size=32, K=4):
     
     # 2. Run greedy policy visualization
     grid_path = "mnist_reconstruction_grid.png"
-    weights_path = "graphos_mnist_policy.pth"
+    weights_path = "graphos_mnist_policy_10d.pth"
     
     run_and_save_reconstruction(
         weights_path=weights_path, 

@@ -43,9 +43,9 @@ def run_and_save_reconstruction(weights_path="graphos_mnist_policy.pth", save_pa
     target_img = torch.clamp(target_img, 0.0, 1.0)
     target_rgb = target_img.repeat(3, 1, 1).unsqueeze(0) # [1, 3, H, W]
     
-    # 2. Instantiate and Load Policy & Renderer (with action_dim=14)
+    # 2. Instantiate and Load Policy & Renderer (with action_dim=10)
     renderer = DifferentiableBezierRenderer(canvas_height=H, canvas_width=W, tau=0.5).to(device)
-    policy = DifferentiableGraphosPolicy(img_size=H, num_layers=4, num_heads=4, embed_dim=128, action_dim=14).to(device)
+    policy = DifferentiableGraphosPolicy(img_size=H, num_layers=4, num_heads=4, embed_dim=128, action_dim=10).to(device)
     
     if os.path.exists(weights_path):
         state_dict = torch.load(weights_path, map_location=device)
@@ -78,16 +78,18 @@ def run_and_save_reconstruction(weights_path="graphos_mnist_policy.pth", save_pa
             alpha, beta, _ = policy(target_rgb, canvas_rgb, canvas_alpha, step_t)
             
         # Greedy action: expected value of Beta distribution (mean)
-        action = alpha / (alpha + beta) # [1, 14]
+        action = alpha / (alpha + beta) # [1, 10]
         # Clamp action to prevent boundary NaNs
         action_clamped = torch.clamp(action, min=1e-5, max=1.0 - 1e-5)
         
         # Extract stroke geometry & mode (enforce minimum width bias to match training setup)
         cp = action_clamped[:, 0:6].view(1, 3, 2) * scale_cp
         w = 2.0 + action_clamped[:, 6:9] * (H * 0.12 - 2.0)
-        c = action_clamped[:, 9:12]
-        opacities = action_clamped[:, 12:13]
-        modes = (action_clamped[:, 13:14] > 0.5).float() * 2.0 - 1.0 # Draw (+1) or Erase (-1)
+        opacities = action_clamped[:, 9:10]
+        
+        # Hardcode black ink and draw mode for visualization
+        c = torch.zeros((1, 3), device=device)
+        modes = torch.ones((1, 1), device=device)
         
         # Render
         canvas = renderer(cp, w, c, opacities, modes, canvas)
@@ -97,7 +99,7 @@ def run_and_save_reconstruction(weights_path="graphos_mnist_policy.pth", save_pa
         stroke_params.append({
             'cp': cp.squeeze(0).cpu().numpy(),
             'w': w.squeeze(0).cpu().numpy(),
-            'mode': modes.item()
+            'mode': 1.0 # Forced Draw mode
         })
         
     # 4. Generate Plot Layout: 2 Rows, K + 2 Columns
@@ -176,5 +178,5 @@ def run_and_save_reconstruction(weights_path="graphos_mnist_policy.pth", save_pa
 
 if __name__ == "__main__":
     # Check if a model checkpoint exists
-    ckpt = "graphos_mnist_policy.pth" if os.path.exists("graphos_mnist_policy.pth") else "pretrained_graphos_policy.pth"
+    ckpt = "graphos_mnist_policy_10d.pth" if os.path.exists("graphos_mnist_policy_10d.pth") else "pretrained_graphos_policy.pth"
     run_and_save_reconstruction(weights_path=ckpt, save_path="mnist_reconstruction_grid.png", K=4)
