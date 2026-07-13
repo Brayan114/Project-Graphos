@@ -79,7 +79,7 @@ class PreprocessedMNISTVRAMDataset(Dataset):
         return target_rgb, target_alpha
 
 class MNISTPPOTrainingLoop:
-    def __init__(self, K=4, H=128, W=128, lr=1e-4, clip_eps=0.2, gamma=0.99, gae_lambda=0.95, value_coef=0.5, entropy_coef=0.01):
+    def __init__(self, K=4, H=128, W=128, lr=5e-5, clip_eps=0.2, gamma=0.99, gae_lambda=0.95, value_coef=0.5, entropy_coef=0.03):
         """
         PPO Trainer specialized for MNIST handwriting reconstruction.
         Uses a 14-dimensional action space to support Draw and Erase modes.
@@ -157,21 +157,23 @@ class MNISTPPOTrainingLoop:
                 # Sample actions from the 14D Beta distribution
                 dist = Beta(alpha, beta)
                 action = dist.sample() # [B, 14]
-                log_prob = dist.log_prob(action).sum(dim=-1) # [B]
+                # Clamp actions strictly away from boundaries 0 and 1 to prevent log(0) and log(1) NaNs
+                action_clamped = torch.clamp(action, min=1e-5, max=1.0 - 1e-5)
+                log_prob = dist.log_prob(action_clamped).sum(dim=-1) # [B]
                 
-                actions_history.append(action.clone().detach())
+                actions_history.append(action_clamped.clone().detach())
                 log_probs_history.append(log_prob.clone().detach())
                 
                 # Draw / Erase decision (14th parameter mapped to mode: Draw if > 0.5 else Erase)
                 # Map [0, 1] parameter to [-1, 1] mode range
-                modes = (action[:, 13:14] > 0.5).float() * 2.0 - 1.0 # [B, 1]
+                modes = (action_clamped[:, 13:14] > 0.5).float() * 2.0 - 1.0 # [B, 1]
                 
                 # Render strokes
                 # Scale coordinates and apply a minimum stroke width of 2.0 pixels to prevent dissipation
-                cp = action[:, 0:6].view(B, 3, 2) * scale_cp
-                w = 2.0 + action[:, 6:9] * (self.H * 0.12 - 2.0)
-                c = action[:, 9:12]
-                opacities = action[:, 12:13]
+                cp = action_clamped[:, 0:6].view(B, 3, 2) * scale_cp
+                w = 2.0 + action_clamped[:, 6:9] * (self.H * 0.12 - 2.0)
+                c = action_clamped[:, 9:12]
+                opacities = action_clamped[:, 12:13]
                 
                 new_canvas = self.renderer(cp, w, c, opacities, modes, canvas)
                 
@@ -267,7 +269,9 @@ class MNISTPPOTrainingLoop:
                     value = value.squeeze(-1) # [B]
                     
                     dist = Beta(alpha, beta)
-                    new_log_p = dist.log_prob(act).sum(dim=-1)
+                    # Clamp actions strictly away from boundaries 0 and 1 to prevent log(0) and log(1) NaNs
+                    act_clamped = torch.clamp(act, min=1e-5, max=1.0 - 1e-5)
+                    new_log_p = dist.log_prob(act_clamped).sum(dim=-1)
                     entropy = dist.entropy().sum(dim=-1)
                     
                     ratio = torch.exp(new_log_p - old_log_p)

@@ -237,11 +237,11 @@ class DifferentiableGraphosPolicy(nn.Module):
         actor_out = self.actor_fc(cls_rep) # [B, action_dim * 2]
         alpha_raw, beta_raw = torch.chunk(actor_out, 2, dim=-1) # Each [B, action_dim]
         
-        # Map shape parameters to Beta distribution space: Softplus(x) + 1.0
-        # Prevents alpha/beta from drifting <= 1.0 which creates numeric instability
-        # Clamped to max 20.0 to prevent distribution saturation and preserve gradients.
-        alpha = torch.clamp(F.softplus(alpha_raw) + 1.0001, max=20.0)
-        beta = torch.clamp(F.softplus(beta_raw) + 1.0001, max=20.0)
+        # Map shape parameters to Beta distribution space: Softplus(x) + 1.01
+        # Prevents alpha/beta from drifting <= 1.0 which creates numeric instability.
+        # Clamped to max 50.0 to prevent distribution saturation and log-gamma overflow.
+        alpha = torch.clamp(F.softplus(alpha_raw) + 1.01, max=50.0)
+        beta = torch.clamp(F.softplus(beta_raw) + 1.01, max=50.0)
         
         # Project to Critic estimate
         value = self.critic_fc(cls_rep) # [B, 1]

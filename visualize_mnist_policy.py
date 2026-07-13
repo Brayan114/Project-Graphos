@@ -79,13 +79,15 @@ def run_and_save_reconstruction(weights_path="graphos_mnist_policy.pth", save_pa
             
         # Greedy action: expected value of Beta distribution (mean)
         action = alpha / (alpha + beta) # [1, 14]
+        # Clamp action to prevent boundary NaNs
+        action_clamped = torch.clamp(action, min=1e-5, max=1.0 - 1e-5)
         
         # Extract stroke geometry & mode (enforce minimum width bias to match training setup)
-        cp = action[:, 0:6].view(1, 3, 2) * scale_cp
-        w = 2.0 + action[:, 6:9] * (H * 0.12 - 2.0)
-        c = action[:, 9:12]
-        opacities = action[:, 12:13]
-        modes = (action[:, 13:14] > 0.5).float() * 2.0 - 1.0 # Draw (+1) or Erase (-1)
+        cp = action_clamped[:, 0:6].view(1, 3, 2) * scale_cp
+        w = 2.0 + action_clamped[:, 6:9] * (H * 0.12 - 2.0)
+        c = action_clamped[:, 9:12]
+        opacities = action_clamped[:, 12:13]
+        modes = (action_clamped[:, 13:14] > 0.5).float() * 2.0 - 1.0 # Draw (+1) or Erase (-1)
         
         # Render
         canvas = renderer(cp, w, c, opacities, modes, canvas)
