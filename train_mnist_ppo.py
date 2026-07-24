@@ -234,7 +234,7 @@ class MNISTPPOTrainingLoop:
         flat_obs_rgb = obs_rgb.view(K*B, 3, self.H, self.W)
         flat_obs_alpha = obs_alpha.view(K*B, 1, self.H, self.W)
         flat_obs_step = obs_step.view(K*B, 1)
-        flat_actions = actions.view(K*B, 14) # 14D Actions
+        flat_actions = actions.view(K*B, actions.shape[-1])
         flat_old_log_probs = old_log_probs.view(K*B)
         flat_returns = returns.view(K*B)
         flat_advantages = advantages.view(K*B)
