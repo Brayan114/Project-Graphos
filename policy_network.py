@@ -212,8 +212,8 @@ class DifferentiableGraphosPolicy(nn.Module):
         t_emb = self.time_embed(step_index) # [B, time_dim]
         
         # 1. Structure the 4-channel input paths
-        # Target Path: Concat target image + difference map
-        diff_img = target_img - canvas_img
+        # Compute absolute difference map (representing residual error magnitude)
+        diff_img = torch.abs(target_img - canvas_img)
         target_path = torch.cat([target_img, diff_img.mean(dim=1, keepdim=True)], dim=1) # [B, 4, H, W]
         
         # Canvas Path: Concat canvas image + canvas alpha

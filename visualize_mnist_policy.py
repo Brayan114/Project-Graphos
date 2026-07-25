@@ -85,7 +85,8 @@ def run_and_save_reconstruction(weights_path="graphos_mnist_policy.pth", save_pa
         # Extract stroke geometry & mode (enforce minimum width bias to match training setup)
         cp = action_clamped[:, 0:6].view(1, 3, 2) * scale_cp
         w = 2.0 + action_clamped[:, 6:9] * (H * 0.12 - 2.0)
-        opacities = action_clamped[:, 9:10]
+        # Enforce a minimum opacity of 0.15 to match training setup
+        opacities = 0.15 + action_clamped[:, 9:10] * 0.85
         
         # Hardcode black ink and draw mode for visualization
         c = torch.zeros((1, 3), device=device)

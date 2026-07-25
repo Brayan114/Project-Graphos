@@ -172,18 +172,20 @@ class MNISTPPOTrainingLoop:
                 # Scale coordinates and apply a minimum stroke width of 2.0 pixels to prevent dissipation
                 cp = action_clamped[:, 0:6].view(B, 3, 2) * scale_cp
                 w = 2.0 + action_clamped[:, 6:9] * (self.H * 0.12 - 2.0)
-                opacities = action_clamped[:, 9:10]
+                # Enforce a minimum opacity of 0.15 to keep control coordinates gradients active
+                opacities = 0.15 + action_clamped[:, 9:10] * 0.85
                 
                 new_canvas = self.renderer(cp, w, c, opacities, modes, canvas)
                 
                 # Compute step reward (L1 delta)
                 new_l1 = F.l1_loss(new_canvas[:, :3, :, :], batch_targets, reduction='none').mean(dim=[1,2,3])
                 
-                # Paint waste regularization (decays over step t, scaled down to prevent early collapse)
-                reg_weight = 0.01 * (1.0 - (t / self.K))
+                # Paint waste regularization (decays over step t, scaled down to match sparse L1 signals)
+                reg_weight = 0.001 * (1.0 - (t / self.K))
                 reg = action_clamped[:, 6:9].mean(dim=-1) * action_clamped[:, 9]
                 
-                reward = (current_l1 - new_l1) - reg_weight * reg
+                # Scale L1 difference by 100.0 so reconstruction magnitude dominates the regularization penalty
+                reward = 100.0 * (current_l1 - new_l1) - reg_weight * reg
                 rewards_history.append(reward.clone().detach())
                 
                 # Update canvas and L1 trackers
@@ -306,6 +308,8 @@ def run_mnist_rl_sprint(epochs=5, batch_size=32, K=4):
     for epoch in range(epochs):
         epoch_reward = 0.0
         batches_count = 0
+        total_widths = torch.zeros(K, device=device)
+        total_opacities = torch.zeros(K, device=device)
         
         start_time = time.time()
         for target_img, _ in loader:
@@ -313,7 +317,14 @@ def run_mnist_rl_sprint(epochs=5, batch_size=32, K=4):
             
             # Rollout collection (Safe from leaks)
             rollouts = trainer.collect_rollouts(target_img)
-            rewards = rollouts[3] # [K, B]
+            actions = rollouts[3] # [K, B, 10]
+            rewards = rollouts[4] # [K, B] (Note: index 4 is rewards in the 7-tuple returned)
+            
+            # Accumulate step-wise actions
+            step_widths = actions[:, :, 6:9].mean(dim=-1).mean(dim=1)
+            step_opacities = actions[:, :, 9].mean(dim=1)
+            total_widths += step_widths.detach()
+            total_opacities += step_opacities.detach()
             
             # Parallel update
             trainer.update_policy(target_img, rollouts)
@@ -322,7 +333,14 @@ def run_mnist_rl_sprint(epochs=5, batch_size=32, K=4):
             batches_count += 1
             
         elapsed = time.time() - start_time
+        avg_widths = (total_widths / batches_count).cpu().tolist()
+        avg_opacities = (total_opacities / batches_count).cpu().tolist()
+        
         print(f"Epoch {epoch+1:02d}/{epochs:02d} | Avg Trajectory Reward: {epoch_reward/batches_count:.5f} | Time: {elapsed:.2f}s")
+        print("  Step-wise Action Metrics (Normalized [0, 1]):")
+        for t in range(K):
+            print(f"    ├─ Step {t+1}: Width = {avg_widths[t]:.4f} (pixels: {2.0 + avg_widths[t]*(128*0.12 - 2.0):.1f}), Opacity = {avg_opacities[t]:.4f}")
+        print("  " + "-"*40)
         
         # Save checkpoint weights (unwrapping torch.compile wrapper if it exists)
         raw_policy = trainer.policy._orig_mod if hasattr(trainer.policy, "_orig_mod") else trainer.policy
