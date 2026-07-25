@@ -45,7 +45,7 @@ def run_and_save_reconstruction(weights_path="graphos_mnist_policy.pth", save_pa
     
     # 2. Instantiate and Load Policy & Renderer (with action_dim=10)
     renderer = DifferentiableBezierRenderer(canvas_height=H, canvas_width=W, tau=0.5).to(device)
-    policy = DifferentiableGraphosPolicy(img_size=H, num_layers=4, num_heads=4, embed_dim=128, action_dim=10).to(device)
+    policy = DifferentiableGraphosPolicy(img_size=H, patch_size=8, num_layers=4, num_heads=4, embed_dim=128, action_dim=10).to(device)
     
     if os.path.exists(weights_path):
         state_dict = torch.load(weights_path, map_location=device)

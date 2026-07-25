@@ -7,7 +7,7 @@ from PIL import Image
 from train_mnist_ppo import run_mnist_rl_sprint
 from visualize_mnist_policy import run_and_save_reconstruction
 
-def execute_complete_pipeline(epochs=60, batch_size=32, K=4):
+def execute_complete_pipeline(epochs=200, batch_size=32, K=4):
     """
     Executes the complete Project Graphos MNIST pipeline:
     1. Trains the 14D Draw/Erase policy network on MNIST using PPO for specified epochs.
@@ -54,5 +54,5 @@ def execute_complete_pipeline(epochs=60, batch_size=32, K=4):
     print("\nPipeline execution complete!")
 
 if __name__ == "__main__":
-    # Execute with 60 training epochs by default
-    execute_complete_pipeline(epochs=60, batch_size=32, K=4)
+    # Execute with 200 training epochs by default
+    execute_complete_pipeline(epochs=200, batch_size=32, K=4)

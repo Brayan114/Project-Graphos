@@ -97,7 +97,7 @@ class MNISTPPOTrainingLoop:
         
         # Initialize Renderer & Policy (using action_dim=10 for black ink, draw-only geometry parameters)
         self.renderer = DifferentiableBezierRenderer(canvas_height=H, canvas_width=W, tau=0.5).to(self.device)
-        self.policy = DifferentiableGraphosPolicy(img_size=H, num_layers=4, num_heads=4, embed_dim=128, action_dim=10).to(self.device)
+        self.policy = DifferentiableGraphosPolicy(img_size=H, patch_size=8, num_layers=4, num_heads=4, embed_dim=128, action_dim=10).to(self.device)
         
         # Compile model to optimize self-attention and cross-attention blocks (unlocks FlashAttention SDPA)
         if torch.cuda.is_available():
@@ -293,7 +293,7 @@ class MNISTPPOTrainingLoop:
                 self.scaler.step(self.optimizer)
                 self.scaler.update()
 
-def run_mnist_rl_sprint(epochs=5, batch_size=32, K=4):
+def run_mnist_rl_sprint(epochs=200, batch_size=32, K=4):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"🚀 Initializing Project Graphos MNIST PPO RL Sprint on: {device.type.upper()}")
     
@@ -302,6 +302,10 @@ def run_mnist_rl_sprint(epochs=5, batch_size=32, K=4):
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     
     trainer = MNISTPPOTrainingLoop(K=K, H=128, W=128)
+    
+    # 2. Setup Cosine Annealing Scheduler (decay from 5e-5 to 5e-6)
+    from torch.optim.lr_scheduler import CosineAnnealingLR
+    scheduler = CosineAnnealingLR(trainer.optimizer, T_max=epochs, eta_min=5e-6)
     
     print("\nStarting MNIST PPO optimization loops...")
     
@@ -336,7 +340,10 @@ def run_mnist_rl_sprint(epochs=5, batch_size=32, K=4):
         avg_widths = (total_widths / batches_count).cpu().tolist()
         avg_opacities = (total_opacities / batches_count).cpu().tolist()
         
-        print(f"Epoch {epoch+1:02d}/{epochs:02d} | Avg Trajectory Reward: {epoch_reward/batches_count:.5f} | Time: {elapsed:.2f}s")
+        current_lr = scheduler.get_last_lr()[0]
+        scheduler.step()
+        
+        print(f"Epoch {epoch+1:03d}/{epochs:03d} | Avg Trajectory Reward: {epoch_reward/batches_count:.5f} | LR: {current_lr:.2e} | Time: {elapsed:.2f}s")
         print("  Step-wise Action Metrics (Normalized [0, 1]):")
         for t in range(K):
             print(f"    ├─ Step {t+1}: Width = {avg_widths[t]:.4f} (pixels: {2.0 + avg_widths[t]*(128*0.12 - 2.0):.1f}), Opacity = {avg_opacities[t]:.4f}")
@@ -347,6 +354,6 @@ def run_mnist_rl_sprint(epochs=5, batch_size=32, K=4):
         torch.save(raw_policy.state_dict(), "graphos_mnist_policy_10d.pth")
         
     print("\n🎉 MNIST PPO training complete! Policy saved to 'graphos_mnist_policy_10d.pth'.")
-
+    
 if __name__ == "__main__":
-    run_mnist_rl_sprint(epochs=5, batch_size=32, K=4)
+    run_mnist_rl_sprint(epochs=200, batch_size=32, K=4)
