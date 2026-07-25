@@ -79,7 +79,7 @@ class PreprocessedMNISTVRAMDataset(Dataset):
         return target_rgb, target_alpha
 
 class MNISTPPOTrainingLoop:
-    def __init__(self, K=4, H=128, W=128, lr=5e-5, clip_eps=0.2, gamma=0.99, gae_lambda=0.95, value_coef=0.5, entropy_coef=0.03):
+    def __init__(self, K=4, H=128, W=128, lr=1e-4, clip_eps=0.2, gamma=0.99, gae_lambda=0.95, value_coef=0.5, entropy_coef=0.001):
         """
         PPO Trainer specialized for MNIST handwriting reconstruction.
         Uses a 14-dimensional action space to support Draw and Erase modes.
